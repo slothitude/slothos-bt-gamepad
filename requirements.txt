@@ -1,0 +1,11 @@
+# Runtime Python dep — install via apt (python3-evdev) on Debian-based firmware,
+# or `pip3 install evdev` if no apt package is available.
+evdev>=1.6
+
+# Other non-stdlib runtime imports:
+#   - dbus / dbus.service     -> system package python3-dbus (preinstalled on stock Anbernic firmware)
+#   - gi.repository.GLib      -> system package python3-gi   (preinstalled on stock Anbernic firmware)
+#
+# PyBluez is NOT needed — all L2CAP sockets use stdlib `socket` with AF_BLUETOOTH.
+# set_did.py has an optional `import bluetooth` for the mgmt socket path but
+# falls back to stdlib on import failure.

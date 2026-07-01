@@ -1,0 +1,21 @@
+[Unit]
+Description=SlothOS Bluetooth HID Gamepad Daemon
+After=bluetooth.service slothos-bt.service
+Requires=bluetooth.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/slothos/bt_gamepad/main.py --verbose
+StandardOutput=append:/var/log/bt_gamepad.log
+StandardError=append:/var/log/bt_gamepad.log
+WorkingDirectory=/usr/local/slothos/bt_gamepad
+Restart=on-failure
+RestartSec=3
+User=root
+# evdev needs /dev/input access; Profile1 D-Bus needs system bus. Root is simplest.
+Environment=PYTHONUNBUFFERED=1
+# Optional: bump to debug during Phase 4 mapping verification.
+# Environment=BT_GAMEPAD_VERBOSE=1
+
+[Install]
+WantedBy=multi-user.target

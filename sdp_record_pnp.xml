@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+
+<!--
+  Hand-built PnP Information record (UUID 0x1200) to override BlueZ's
+  auto-generated one. BlueZ's default PNP info has VendorIDSource=0x1d6b
+  (an invalid value; should be 1=BT-SIG or 2=USB-IF) which Windows 11 uses
+  to look up a driver match for the HID service. No driver matches Linux
+  Foundation / PID 0x0246, so the HidBth driver fails to start.
+
+  We masquerade as an Xbox 360 controller (VID 0x045e / PID 0x028e) which
+  Windows has a built-in driver for. The actual HID descriptor we send
+  determines button layout; the PNP info is just for driver matching.
+-->
+<record>
+	<attribute id="0x0001">
+		<sequence>
+			<uuid value="0x1200" />
+		</sequence>
+	</attribute>
+	<!-- Per Bluetooth Device ID Profile spec v1.3 §3.2.
+	     VendorIDSource is UINT8 (1=BT-SIG, 2=USB-IF). We claim USB-IF
+	     since the 8Bitdo VID 0x2DC8 is from the USB-IF registry. -->
+	<attribute id="0x0201">
+		<uint8 value="0x02" />
+	</attribute>
+	<attribute id="0x0202">
+		<uint16 value="0x2dc8" />
+	</attribute>
+	<attribute id="0x0203">
+		<uint16 value="0x6101" />
+	</attribute>
+	<attribute id="0x0204">
+		<uint16 value="0x0100" />
+	</attribute>
+</record>

@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+
+<!--
+  Hand-built HID Service Record for the SlothOS Controller (RG35XX H).
+
+  BlueZ 5.x's default Profile1.RegisterProfile path omits the HID-specific
+  SDP attributes (PSMs, descriptor, subclass) — hosts (esp. Android) refuse
+  to establish the HID channel without them. This record authored from the
+  Bluetooth HID Profile spec §5.2/§5.3, modelled on the BluezGP template.
+
+  PSM 0x0011 (17) = HID Control   (L2CAP)
+  PSM 0x0013 (19) = HID Interrupt (L2CAP)
+  Descriptor bytes: see hid_descriptor.py (92-byte gamepad descriptor,
+  byte-aligned per Windows 11 HidBth validation requirement; 24-button
+  field for Anbernic RG35XX H's 17 physical buttons, rounded up to
+  next byte boundary).
+-->
+<record>
+	<attribute id="0x0001">
+		<sequence>
+			<uuid value="0x1124" />
+		</sequence>
+	</attribute>
+	<attribute id="0x0004">
+		<sequence>
+			<sequence>
+				<uuid value="0x0100" />
+				<uint16 value="0x0011" />
+			</sequence>
+			<sequence>
+				<uuid value="0x0011" />
+			</sequence>
+		</sequence>
+	</attribute>
+	<attribute id="0x0005">
+		<sequence>
+			<uuid value="0x1002" />
+		</sequence>
+	</attribute>
+	<attribute id="0x0006">
+		<sequence>
+			<uint16 value="0x656e" />
+			<uint16 value="0x006a" />
+			<uint16 value="0x0100" />
+		</sequence>
+	</attribute>
+	<attribute id="0x0009">
+		<sequence>
+			<sequence>
+				<uuid value="0x1124" />
+				<uint16 value="0x0100" />
+			</sequence>
+		</sequence>
+	</attribute>
+	<attribute id="0x000d">
+		<sequence>
+			<sequence>
+				<sequence>
+					<uuid value="0x0100" />
+					<uint16 value="0x0013" />
+				</sequence>
+				<sequence>
+					<uuid value="0x0011" />
+				</sequence>
+			</sequence>
+		</sequence>
+	</attribute>
+	<attribute id="0x0100">
+		<text value="SlothOS Controller" />
+	</attribute>
+	<attribute id="0x0101">
+		<text value="RG35XX H" />
+	</attribute>
+	<attribute id="0x0102">
+		<text value="SlothOS" />
+	</attribute>
+	<attribute id="0x0200">
+		<uint16 value="0x0100" />
+	</attribute>
+	<attribute id="0x0201">
+		<uint16 value="0x0111" />
+	</attribute>
+	<attribute id="0x0202">
+		<uint8 value="0x00" />
+	</attribute>
+	<attribute id="0x0203">
+		<uint8 value="0x00" />
+	</attribute>
+	<attribute id="0x0204">
+		<boolean value="false" />
+	</attribute>
+	<attribute id="0x0205">
+		<boolean value="true" />
+	</attribute>
+	<attribute id="0x0206">
+		<sequence>
+			<sequence>
+				<uint8 value="0x22" />
+				<text encoding="hex" value="05010905a1018501050919012918150025013500450175019518810205010939150025073500463b0165145500750495018142750495018103050109300931093209351581257f750895048102093309341581257f750895028102c0" />
+			</sequence>
+		</sequence>
+	</attribute>
+	<attribute id="0x0207">
+		<sequence>
+			<sequence>
+				<uint16 value="0x0409" />
+				<uint16 value="0x0100" />
+			</sequence>
+		</sequence>
+	</attribute>
+	<!-- HID Profile spec attribute types per HID 1.1 §5.3.2.
+	     Attribute IDs and VALUE TYPES must be exact or Windows 11's
+	     HidBth driver rejects the SDP record during enumeration.
+	     Matched to the HIDpi (github.com/Heerkog/HIDpi) record, which
+	     is the most-tested working RPi Zero W HID gamepad config. -->
+	<attribute id="0x020b">
+		<uint16 value="0x0100" />
+	</attribute>
+	<attribute id="0x020c">
+		<uint16 value="0x0c80" />
+	</attribute>
+	<attribute id="0x020d">
+		<boolean value="false" />
+	</attribute>
+	<attribute id="0x020e">
+		<boolean value="false" />
+	</attribute>
+</record>

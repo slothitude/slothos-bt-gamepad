@@ -1,3 +1,6 @@
 # Splash app deps — only needed for bt_mode.py, not the core BT stack.
 # Install via: python3 -m pip install -r app/requirements.txt
-pygame>=2.5
+# (pygame was removed in v1.0 — the stock SDL build has no fbcon support,
+# so the splash renders directly via /dev/fb0 mmap + PIL.)
+Pillow>=10.0
+evdev>=1.5

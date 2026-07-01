@@ -30,6 +30,13 @@ SERVICE = "bt_gamepad"
 PANEL_W, PANEL_H = 640, 480
 ERROR_HOLD_SEC = 5
 
+# On the Anbernic H700 the Start and Select buttons are mapped to
+# evdev codes 311 and 310 (BTN_TR / BTN_TL on a standard pad), not
+# BTN_START/BTN_SELECT (315/314). Verified on firmware 20251225.
+# See APPS/mod_tools/input.py for the stock keymap.
+CODE_START = 311
+CODE_SELECT = 310
+
 # fb ioctl constants (linux/fb.h)
 FBIOGET_VSCREENINFO = 0x4600
 FBIOPUT_VSCREENINFO = 0x4601
@@ -172,9 +179,9 @@ def combo_pressed(dev):
         for event in dev.read():
             if event.type != evdev.ecodes.EV_KEY:
                 continue
-            if event.code == evdev.ecodes.BTN_START:
+            if event.code == CODE_START:
                 start_held = bool(event.value)
-            elif event.code == evdev.ecodes.BTN_SELECT:
+            elif event.code == CODE_SELECT:
                 select_held = bool(event.value)
             if start_held and select_held:
                 return True
@@ -243,9 +250,9 @@ def main():
         for event in dev.read_loop():
             if event.type != evdev.ecodes.EV_KEY:
                 continue
-            if event.code == evdev.ecodes.BTN_START:
+            if event.code == CODE_START:
                 start_held = bool(event.value)
-            elif event.code == evdev.ecodes.BTN_SELECT:
+            elif event.code == CODE_SELECT:
                 select_held = bool(event.value)
             if start_held and select_held:
                 break

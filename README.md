@@ -61,35 +61,38 @@ Then pair from your host OS. The device appears as **SlothOS Controller**
 
 ### Launching from stock firmware (BT Mode splash)
 
-`install.sh` also deploys an optional fullscreen splash app that gives
-stock-firmware users a visible "Bluetooth Mode" indicator on the device
-panel. While the splash is up:
+`install.sh` **automatically** installs a fullscreen splash app and adds
+a launcher entry for it — no manual steps required. After running the
+installer, reboot the device (or relaunch the frontend) and a new
+**BT_Mode** entry appears under **Apps**.
 
-- `bt_gamepad.service` is started automatically.
-- All button/stick input still forwards to the paired host (the splash
-  does not grab evdev, so it coexists with the BT stack).
-- Press **Start + Select** together to stop BT mode and return to the
-  launcher.
+What the entry does:
+- Starts `bt_gamepad.service` if it isn't already running.
+- Renders the splash image fullscreen on the panel via pygame + fbcon.
+- Forwards all button/stick input to the paired host (the splash does
+  not grab evdev, so it coexists with the BT stack).
+- Exits on **Start + Select** together, stopping the service and
+  returning cleanly to the launcher.
 
-Smoke-test it over SSH:
+Files the installer writes for the launcher (in addition to the splash
+app itself under `/usr/local/slothos/bt_mode/`):
+
+| File | Purpose |
+|------|---------|
+| `/mnt/mmc/Roms/APPS/BT_Mode.sh` | Launcher entry (matches the Clock.sh / Image_Browser.sh pattern stock firmware uses) |
+| `/mnt/mmc/Roms/APPS/Imgs/BT_Mode.png` | 240×180 RGBA icon shown in the launcher grid |
+| `/mnt/sdcard/Roms/APPS/BT_Mode.sh` | Same entry on the secondary SD, if one is populated |
+| `/mnt/sdcard/Roms/APPS/Imgs/BT_Mode.png` | Same icon on the secondary SD |
+
+Smoke-test the splash over SSH (without using the launcher):
 
 ```bash
 ssh root@<device> '/usr/local/bin/slothos-bt-mode &'
 ```
 
-To add a permanent entry to the stock Anbernic launcher, drop a `.sh`
-file in your firmware's APP directory (e.g. `/mnt/app/`,
-`/media/app/`, or `/mnt/SDCARD/APPS/` depending on firmware rev):
-
-```sh
-#!/bin/sh
-exec /usr/local/bin/slothos-bt-mode
-```
-
-The exact APP directory varies by firmware revision — the install
-output prints the common candidates. The splash app is purely
-additive; if you don't want it, ignore the entry and the BT stack
-keeps working as a background service exactly as before.
+The splash app is purely additive — if you don't want it, ignore the
+entry and the BT stack keeps working as a background service exactly as
+before.
 
 ## Pairing
 
@@ -161,6 +164,7 @@ The stack lives in the device's BlueZ userspace — no kernel modifications.
 | `install.sh` | One-command installer (run from host) |
 | `app/bt_mode.py` | Optional BT Mode splash app (pygame + fbcon) |
 | `app/splash.png` | 640×480 splash image shown on the device panel |
+| `app/icon.png` | 240×180 RGBA icon derived from `splash.png`, shown in the stock launcher grid |
 | `app/requirements.txt` | Splash app deps (pygame) |
 | `bt_mode-launch.sh` | Wrapper for stock launcher to invoke the splash |
 

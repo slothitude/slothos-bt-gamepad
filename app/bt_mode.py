@@ -51,6 +51,56 @@ def service_is_active():
     ).returncode == 0
 
 
+def snapshot_fb_mode():
+    """Snapshot the current fb0 mode string so we can re-apply it on exit.
+
+    SDL's fbcon driver normally restores mode on pygame.quit(), but this
+    is a belt-and-braces guard for the dmenu handoff. Returns None on
+    failure (we then skip the re-apply).
+    """
+    try:
+        out = subprocess.run(
+            ["fbset", "-fb", "/dev/fb0"],
+            check=False, capture_output=True, text=True,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout
+    except Exception:
+        pass
+    return None
+
+
+def restore_fb_mode(snapshot):
+    if snapshot is None:
+        return
+    try:
+        subprocess.run(
+            ["fbset", "-fb", "/dev/fb0"],
+            input=snapshot, check=False, text=True,
+        )
+    except Exception:
+        pass
+
+
+def combo_pressed(dev):
+    """Non-blocking check for Start+Select currently held on dev."""
+    start_held = False
+    select_held = False
+    try:
+        for event in dev.read():
+            if event.type != evdev.ecodes.EV_KEY:
+                continue
+            if event.code == evdev.ecodes.BTN_START:
+                start_held = bool(event.value)
+            elif event.code == evdev.ecodes.BTN_SELECT:
+                select_held = bool(event.value)
+            if start_held and select_held:
+                return True
+    except BlockingIOError:
+        pass
+    return False
+
+
 def main():
     # --- ensure service is running (BEFORE pygame so headless test works) ---
     subprocess.run(["systemctl", "start", SERVICE], check=False)
@@ -59,6 +109,7 @@ def main():
 
     # --- init pygame + splash (all of this is best-effort) ---
     screen = None
+    fb_mode_snapshot = snapshot_fb_mode()
     try:
         pygame.init()
         pygame.mouse.set_visible(False)
@@ -77,9 +128,22 @@ def main():
             render_error(screen, "BT service failed to start")
         sys.stderr.write("bt_gamepad failed to start; exiting in "
                          f"{ERROR_HOLD_SEC}s\n")
-        time.sleep(ERROR_HOLD_SEC)
+        # Poll for early-exit combo during the hold so the user isn't
+        # forced to wait the full 5s with a stuck error overlay.
+        try:
+            err_dev = evdev.InputDevice(INPUT_DEV)
+        except OSError:
+            err_dev = None
+        deadline = time.monotonic() + ERROR_HOLD_SEC
+        while time.monotonic() < deadline:
+            if err_dev is not None and combo_pressed(err_dev):
+                break
+            time.sleep(0.05)
+        if err_dev is not None:
+            err_dev.close()
         subprocess.run(["systemctl", "stop", SERVICE], check=False)
         pygame.quit()
+        restore_fb_mode(fb_mode_snapshot)
         sys.exit(1)
 
     # --- watch for Start+Select combo ---
@@ -89,6 +153,7 @@ def main():
         sys.stderr.write(f"fatal: cannot open {INPUT_DEV}: {exc}\n")
         subprocess.run(["systemctl", "stop", SERVICE], check=False)
         pygame.quit()
+        restore_fb_mode(fb_mode_snapshot)
         sys.exit(1)
 
     start_held = False
@@ -106,6 +171,7 @@ def main():
     finally:
         subprocess.run(["systemctl", "stop", SERVICE], check=False)
         pygame.quit()
+        restore_fb_mode(fb_mode_snapshot)
     sys.exit(0)
 
 

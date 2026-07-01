@@ -118,6 +118,9 @@ if [[ "$MODE" == "uninstall" ]]; then
     rm -rf '"${REMOTE_DIR}"'
     rm -rf '"${BT_MODE_DIR}"'
     rm -f '"${BT_MODE_LAUNCH_DST}"'
+    # Launcher entry + icon (stock firmware dmenu APPS dir, both SDs)
+    rm -f /mnt/mmc/Roms/APPS/BT_Mode.sh /mnt/mmc/Roms/APPS/Imgs/BT_Mode.png
+    rm -f /mnt/sdcard/Roms/APPS/BT_Mode.sh /mnt/sdcard/Roms/APPS/Imgs/BT_Mode.png
   ' || log_die "Uninstall commands failed."
   log_ok "Uninstalled. Pair cache on host OS will clear on next pair attempt."
   exit 0
@@ -346,6 +349,55 @@ else
     || log "warning: scp of launcher wrapper failed (non-fatal)"
   "${SSH[@]}" "${SSH_USER}@${DEVICE}" "chmod 755 ${BT_MODE_LAUNCH_DST}" || true
   log_ok "BT Mode splash deployed → ${BT_MODE_LAUNCH_DST}"
+
+  # --- auto-create stock launcher entry + icon (turnkey) ---
+  # Stock Anbernic H700 firmware: top-level .sh files in
+  # /mnt/mmc/Roms/APPS/ show up in the dmenu "Apps" list. Icons live
+  # in Imgs/ as <EntryName>.png (240x180 RGBA). See app/bt_mode.py for
+  # the splash app; this entry just execs the wrapper we shipped above.
+  log "Auto-creating stock launcher entry (BT_Mode.sh + icon)…"
+  ICON_SRC="${HERE}/app/icon.png"
+  if [[ ! -f "$ICON_SRC" ]]; then
+    log "warning: app/icon.png missing — launcher entry will have no icon"
+    ICON_SRC=""
+  fi
+
+  # Primary SD (always present on stock firmware): /mnt/mmc
+  "${SSH[@]}" "${SSH_USER}@${DEVICE}" '
+    set -e
+    mkdir -p /mnt/mmc/Roms/APPS /mnt/mmc/Roms/APPS/Imgs
+    cat > /mnt/mmc/Roms/APPS/BT_Mode.sh <<"ENTRY"
+#!/bin/bash
+progdir=/usr/local/slothos/bt_mode
+exec python3 ${progdir}/bt_mode.py > ${progdir}/log.txt 2>&1
+ENTRY
+    chmod 755 /mnt/mmc/Roms/APPS/BT_Mode.sh
+  ' || log "warning: failed to create /mnt/mmc launcher entry (non-fatal)"
+
+  if [[ -n "$ICON_SRC" ]]; then
+    "${SCP[@]}" -q "$ICON_SRC" \
+      "${SSH_USER}@${DEVICE}:/mnt/mmc/Roms/APPS/Imgs/BT_Mode.png" \
+      || log "warning: scp of launcher icon failed (non-fatal)"
+  fi
+
+  # Secondary SD (only present when user has a 2nd SD populated). The
+  # mount point /mnt/sdcard exists on stock firmware even when empty,
+  # so we gate on it actually being mounted (best-effort, never fatal).
+  if "${SSH[@]}" "${SSH_USER}@${DEVICE}" 'mountpoint -q /mnt/sdcard 2>/dev/null'; then
+    log "Secondary SD detected — mirroring launcher entry to /mnt/sdcard"
+    "${SSH[@]}" "${SSH_USER}@${DEVICE}" '
+      mkdir -p /mnt/sdcard/Roms/APPS /mnt/sdcard/Roms/APPS/Imgs
+      cp -f /mnt/mmc/Roms/APPS/BT_Mode.sh /mnt/sdcard/Roms/APPS/BT_Mode.sh 2>/dev/null || true
+      chmod 755 /mnt/sdcard/Roms/APPS/BT_Mode.sh 2>/dev/null || true
+    ' || log "warning: /mnt/sdcard mirror skipped (non-fatal)"
+    if [[ -n "$ICON_SRC" ]]; then
+      "${SCP[@]}" -q "$ICON_SRC" \
+        "${SSH_USER}@${DEVICE}:/mnt/sdcard/Roms/APPS/Imgs/BT_Mode.png" \
+        || log "warning: scp of /mnt/sdcard icon failed (non-fatal)"
+    fi
+  fi
+
+  log_ok "Launcher entry created — tap BT_Mode in Apps on the device"
 fi
 
 # ---------- show status ----------
@@ -378,18 +430,15 @@ echo "If pair fails or buttons don't register, read docs/TROUBLESHOOTING.md."
 echo "Logs: ssh ${SSH_USER}@${DEVICE} 'tail -f /var/log/bt_gamepad.log /var/log/bluetoothd.log'"
 echo
 c_blu "=== BT Mode splash app ==="
-echo "A fullscreen splash is deployed for stock-firmware users. Launch it with:"
-echo "  ssh ${SSH_USER}@${DEVICE} '${BT_MODE_LAUNCH_DST} &'    # smoke test over SSH"
+echo "A fullscreen splash is deployed for stock-firmware users. The launcher"
+echo "entry has been auto-created — reboot the device (or relaunch the"
+echo "frontend) and tap the new BT_Mode entry under Apps."
 echo
-echo "To add an entry to the stock Anbernic launcher, create a .sh file in"
-echo "the firmware's APP directory that calls ${BT_MODE_LAUNCH_DST}."
-echo "The exact APP directory varies by firmware revision — common locations:"
-echo "  /mnt/app/        (newer H700 firmware)"
-echo "  /media/app/      (alternate mount)"
-echo "  /mnt/SDCARD/APPS/ (SD-card based launchers)"
-echo "A minimal entry looks like:"
-echo '  #!/bin/sh'
-echo "  exec ${BT_MODE_LAUNCH_DST}"
+echo "  Entry: /mnt/mmc/Roms/APPS/BT_Mode.sh"
+echo "  Icon:  /mnt/mmc/Roms/APPS/Imgs/BT_Mode.png"
+echo
+echo "Smoke-test over SSH (without using the launcher):"
+echo "  ssh ${SSH_USER}@${DEVICE} '${BT_MODE_LAUNCH_DST} &'"
 echo
 echo "While the splash is up, all buttons still forward to the paired host"
 echo "(evdev is not grabbed). Press Start+Select together to exit BT mode"

@@ -257,23 +257,15 @@ class L2CAPHIDServer:
 
         # BlueZ clears CoD when an external profile is registered — re-apply.
         self._force_cod_after_profile()
-        # Delete BlueZ's auto-generated PNP record (handle 0x10000) which has
-        # bogus VendorIDSource=0x1d6b (Linux Foundation) — Windows' HidBth
-        # driver-matching uses the FIRST PNP record and rejects unknown vendors
-        # with Problem 0xA. ``sdptool del 0x10000`` removes it; our PNP profile
-        # (registered just above) becomes the only one. Must run AFTER our
-        # profile registration so we still have a PNP record at all.
-        try:
-            subprocess.run(
-                ["sdptool", "del", "0x10000"],
-                check=True, capture_output=True, text=True, timeout=5,
-            )
-            log.info("deleted BlueZ's auto-PNP record (handle 0x10000) — our Xbox 360 override is now sole PNP")
-        except subprocess.CalledProcessError as exc:
-            log.warning("sdptool del 0x10000 failed (rc=%d): %s",
-                        exc.returncode, (exc.stderr or "").strip())
-        except Exception as exc:
-            log.warning("sdptool del 0x10000 failed: %s", exc)
+        # NOTE: an earlier revision here unconditionally ran
+        # ``sdptool del 0x10000`` to remove BlueZ's auto-generated PnP
+        # record (the one with the bogus 0x1d6b Linux Foundation vendor
+        # that Windows' HidBth driver rejects). With ``--noplugin=input``
+        # that auto-PnP record never exists, so 0x10000 ends up holding
+        # our OWN HID profile record — deleting it removed the HID
+        # service from SDP entirely, and Windows saw the device as an
+        # audio peripheral (no 0x1124 UUID) and refused to connect for
+        # HID gameplay. Verified against stock H700 firmware 20251225.
 
     # ---------- L2CAP sockets ----------
 

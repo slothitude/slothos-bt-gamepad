@@ -52,28 +52,33 @@ def service_is_active():
 
 
 def main():
-    pygame.init()
-    pygame.mouse.set_visible(False)
+    # --- ensure service is running (BEFORE pygame so headless test works) ---
+    subprocess.run(["systemctl", "start", SERVICE], check=False)
+    time.sleep(1)
+    service_ok = service_is_active()
+
+    # --- init pygame + splash (all of this is best-effort) ---
+    screen = None
     try:
+        pygame.init()
+        pygame.mouse.set_visible(False)
         screen = pygame.display.set_mode((PANEL_W, PANEL_H))
         splash = pygame.image.load(SPLASH_PATH).convert()
         screen.blit(splash, (0, 0))
         pygame.display.flip()
     except Exception as exc:
-        # No panel / no splash — keep running so input loop + service
-        # management still work (e.g. over SSH for testing).
+        # No panel / no splash (e.g. launched over SSH with no tty) — keep
+        # running so input loop + service management still work.
         sys.stderr.write(f"warning: splash render failed: {exc}\n")
         screen = None
 
-    # --- ensure service is running ---
-    subprocess.run(["systemctl", "start", SERVICE], check=False)
-    time.sleep(1)
-    if not service_is_active():
+    if not service_ok:
         if screen is not None:
             render_error(screen, "BT service failed to start")
         sys.stderr.write("bt_gamepad failed to start; exiting in "
                          f"{ERROR_HOLD_SEC}s\n")
         time.sleep(ERROR_HOLD_SEC)
+        subprocess.run(["systemctl", "stop", SERVICE], check=False)
         pygame.quit()
         sys.exit(1)
 

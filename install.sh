@@ -308,58 +308,18 @@ log_ok "bt_gamepad running"
 
 log "Deploying BT Mode splash app…"
 
-# --- prep splash.png on host: resize/canvas-pad to exactly 640x480 ---
+# --- splash.png ships pre-sized at 640x480; deploy as-is ---
 SPLASH_SRC="${HERE}/app/splash.png"
-SPLASH_HOST_PREP="$(mktemp --suffix=.png 2>/dev/null || mktemp).png"
 if [[ ! -f "$SPLASH_SRC" ]]; then
   log "warning: app/splash.png missing — skipping splash deploy (non-fatal)"
 else
-  if ! C:/Python313/python.exe - <<PYEOF 2>/dev/null
-from PIL import Image
-im = Image.open(r"${SPLASH_SRC}").convert("RGB")
-target = (640, 480)
-if im.size != target:
-    # Preserve aspect; pad with black bars to hit exactly 640x480.
-    im.thumbnail(target, Image.LANCZOS)
-    canvas = Image.new("RGB", target, (0, 0, 0))
-    canvas.paste(im, ((target[0] - im.size[0]) // 2,
-                      (target[1] - im.size[1]) // 2))
-    im = canvas
-im.save(r"${SPLASH_HOST_PREP}")
-PYEOF
-  then
-    # Host PIL missing or host is not Windows — try plain python3
-    if python3 - <<PYEOF 2>/dev/null
-from PIL import Image
-im = Image.open("${SPLASH_SRC}").convert("RGB")
-target = (640, 480)
-if im.size != target:
-    im.thumbnail(target, Image.LANCZOS)
-    canvas = Image.new("RGB", target, (0, 0, 0))
-    canvas.paste(im, ((target[0] - im.size[0]) // 2,
-                      (target[1] - im.size[1]) // 2))
-    im = canvas
-im.save("${SPLASH_HOST_PREP}")
-PYEOF
-    then :; else
-      log "warning: host has no PIL — deploying raw splash (may not be 640x480)"
-      cp "$SPLASH_SRC" "$SPLASH_HOST_PREP"
-    fi
-  fi
-
   "${SSH[@]}" "${SSH_USER}@${DEVICE}" "mkdir -p ${BT_MODE_DIR}"
   "${SCP[@]}" -q \
     "${HERE}/app/bt_mode.py" \
     "${HERE}/app/requirements.txt" \
-    "${SPLASH_HOST_PREP}" \
+    "${SPLASH_SRC}" \
     "${SSH_USER}@${DEVICE}:${BT_MODE_DIR}/" \
-    || { rm -f "$SPLASH_HOST_PREP"; log "warning: splash app scp failed (non-fatal)"; }
-  # scp keeps the temp name; rename to splash.png on device.
-  "${SSH[@]}" "${SSH_USER}@${DEVICE}" "
-    cd ${BT_MODE_DIR} && \
-    mv \"\$(ls *.png 2>/dev/null | head -1)\" splash.png 2>/dev/null || true
-  " || true
-  rm -f "$SPLASH_HOST_PREP"
+    || log "warning: splash app scp failed (non-fatal)"
 
   # --- install pygame on device (reuse pip bootstrap if needed) ---
   "${SSH[@]}" "${SSH_USER}@${DEVICE}" '
@@ -419,7 +379,7 @@ echo "Logs: ssh ${SSH_USER}@${DEVICE} 'tail -f /var/log/bt_gamepad.log /var/log/
 echo
 c_blu "=== BT Mode splash app ==="
 echo "A fullscreen splash is deployed for stock-firmware users. Launch it with:"
-echo "  ssh ${SSH_USER}@${DEVICE} '${BT_MODE_LAUNCH_DST} &'    # smoke test over SSH
+echo "  ssh ${SSH_USER}@${DEVICE} '${BT_MODE_LAUNCH_DST} &'    # smoke test over SSH"
 echo
 echo "To add an entry to the stock Anbernic launcher, create a .sh file in"
 echo "the firmware's APP directory that calls ${BT_MODE_LAUNCH_DST}."

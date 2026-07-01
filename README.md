@@ -59,6 +59,38 @@ Then pair from your host OS. The device appears as **SlothOS Controller**
 (or whatever name BlueZ advertises on your firmware). On Windows, open
 `joy.cpl` to verify every button.
 
+### Launching from stock firmware (BT Mode splash)
+
+`install.sh` also deploys an optional fullscreen splash app that gives
+stock-firmware users a visible "Bluetooth Mode" indicator on the device
+panel. While the splash is up:
+
+- `bt_gamepad.service` is started automatically.
+- All button/stick input still forwards to the paired host (the splash
+  does not grab evdev, so it coexists with the BT stack).
+- Press **Start + Select** together to stop BT mode and return to the
+  launcher.
+
+Smoke-test it over SSH:
+
+```bash
+ssh root@<device> '/usr/local/bin/slothos-bt-mode &'
+```
+
+To add a permanent entry to the stock Anbernic launcher, drop a `.sh`
+file in your firmware's APP directory (e.g. `/mnt/app/`,
+`/media/app/`, or `/mnt/SDCARD/APPS/` depending on firmware rev):
+
+```sh
+#!/bin/sh
+exec /usr/local/bin/slothos-bt-mode
+```
+
+The exact APP directory varies by firmware revision — the install
+output prints the common candidates. The splash app is purely
+additive; if you don't want it, ignore the entry and the BT stack
+keeps working as a background service exactly as before.
+
 ## Pairing
 
 1. Put the device in discoverable mode (the install script's output shows how):
@@ -127,6 +159,10 @@ The stack lives in the device's BlueZ userspace — no kernel modifications.
 | `bt_gamepad.service` | systemd unit |
 | `bluetooth.service.d/exec.conf` | BlueZ `--compat` + plugin blocklist override |
 | `install.sh` | One-command installer (run from host) |
+| `app/bt_mode.py` | Optional BT Mode splash app (pygame + fbcon) |
+| `app/splash.png` | 640×480 splash image shown on the device panel |
+| `app/requirements.txt` | Splash app deps (pygame) |
+| `bt_mode-launch.sh` | Wrapper for stock launcher to invoke the splash |
 
 ## Troubleshooting
 

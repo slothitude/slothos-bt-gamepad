@@ -90,10 +90,12 @@ log "Target: ${SSH_USER}@${DEVICE}  (mode: ${MODE}, auth: ${AUTH_LABEL})"
 # ---------- paths ----------
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REMOTE_DIR="/usr/local/slothos/bt_gamepad"
+BT_MODE_DIR="/usr/local/slothos/bt_mode"
 SERVICE_SRC="${HERE}/bt_gamepad.service"
 SERVICE_DST="/etc/systemd/system/bt_gamepad.service"
 DROPIN_SRC="${HERE}/bluetooth.service.d/exec.conf"
 DROPIN_DST="/etc/systemd/system/bluetooth.service.d/exec.conf"
+BT_MODE_LAUNCH_DST="/usr/local/bin/slothos-bt-mode"
 
 # ---------- connectivity ----------
 log "Testing SSH…"
@@ -114,6 +116,8 @@ if [[ "$MODE" == "uninstall" ]]; then
     systemctl daemon-reload
     systemctl restart bluetooth 2>/dev/null || true
     rm -rf '"${REMOTE_DIR}"'
+    rm -rf '"${BT_MODE_DIR}"'
+    rm -f '"${BT_MODE_LAUNCH_DST}"'
   ' || log_die "Uninstall commands failed."
   log_ok "Uninstalled. Pair cache on host OS will clear on next pair attempt."
   exit 0
@@ -295,6 +299,95 @@ log "Enabling + starting bt_gamepad…"
 ' || log_die "bt_gamepad failed to start. Check /var/log/bt_gamepad.log."
 log_ok "bt_gamepad running"
 
+# =====================================================================
+# BT MODE SPLASH APP (optional, additive)
+# =====================================================================
+# A fullscreen pygame splash that shows the BT-mode image on the panel,
+# ensures the service is running, and exits on Start+Select. Useful on
+# stock firmware where there's no on-device indication of BT mode.
+
+log "Deploying BT Mode splash app…"
+
+# --- prep splash.png on host: resize/canvas-pad to exactly 640x480 ---
+SPLASH_SRC="${HERE}/app/splash.png"
+SPLASH_HOST_PREP="$(mktemp --suffix=.png 2>/dev/null || mktemp).png"
+if [[ ! -f "$SPLASH_SRC" ]]; then
+  log "warning: app/splash.png missing — skipping splash deploy (non-fatal)"
+else
+  if ! C:/Python313/python.exe - <<PYEOF 2>/dev/null
+from PIL import Image
+im = Image.open(r"${SPLASH_SRC}").convert("RGB")
+target = (640, 480)
+if im.size != target:
+    # Preserve aspect; pad with black bars to hit exactly 640x480.
+    im.thumbnail(target, Image.LANCZOS)
+    canvas = Image.new("RGB", target, (0, 0, 0))
+    canvas.paste(im, ((target[0] - im.size[0]) // 2,
+                      (target[1] - im.size[1]) // 2))
+    im = canvas
+im.save(r"${SPLASH_HOST_PREP}")
+PYEOF
+  then
+    # Host PIL missing or host is not Windows — try plain python3
+    if python3 - <<PYEOF 2>/dev/null
+from PIL import Image
+im = Image.open("${SPLASH_SRC}").convert("RGB")
+target = (640, 480)
+if im.size != target:
+    im.thumbnail(target, Image.LANCZOS)
+    canvas = Image.new("RGB", target, (0, 0, 0))
+    canvas.paste(im, ((target[0] - im.size[0]) // 2,
+                      (target[1] - im.size[1]) // 2))
+    im = canvas
+im.save("${SPLASH_HOST_PREP}")
+PYEOF
+    then :; else
+      log "warning: host has no PIL — deploying raw splash (may not be 640x480)"
+      cp "$SPLASH_SRC" "$SPLASH_HOST_PREP"
+    fi
+  fi
+
+  "${SSH[@]}" "${SSH_USER}@${DEVICE}" "mkdir -p ${BT_MODE_DIR}"
+  "${SCP[@]}" -q \
+    "${HERE}/app/bt_mode.py" \
+    "${HERE}/app/requirements.txt" \
+    "${SPLASH_HOST_PREP}" \
+    "${SSH_USER}@${DEVICE}:${BT_MODE_DIR}/" \
+    || { rm -f "$SPLASH_HOST_PREP"; log "warning: splash app scp failed (non-fatal)"; }
+  # scp keeps the temp name; rename to splash.png on device.
+  "${SSH[@]}" "${SSH_USER}@${DEVICE}" "
+    cd ${BT_MODE_DIR} && \
+    mv \"\$(ls *.png 2>/dev/null | head -1)\" splash.png 2>/dev/null || true
+  " || true
+  rm -f "$SPLASH_HOST_PREP"
+
+  # --- install pygame on device (reuse pip bootstrap if needed) ---
+  "${SSH[@]}" "${SSH_USER}@${DEVICE}" '
+    if ! python3 -c "import pygame" 2>/dev/null; then
+      if ! python3 -m pip --version >/dev/null 2>&1; then
+        echo "[device] pip missing — bootstrapping via get-pip.py"
+        if command -v curl >/dev/null 2>&1; then
+          curl -sSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
+        else
+          wget -q https://bootstrap.pypa.io/get-pip.py -O /tmp/get-pip.py
+        fi
+        python3 /tmp/get-pip.py --root-user-action=ignore >/dev/null 2>&1 || {
+          echo "[device] pip bootstrap failed" >&2; exit 1; }
+      fi
+      echo "[device] installing pygame"
+      python3 -m pip install --root-user-action=ignore "pygame>=2.5" 2>&1 | tail -3
+    fi
+    python3 -c "import pygame; print(\"pygame \" + pygame.__version__)"
+  ' || log "warning: pygame install failed on device (splash app won't run until fixed)"
+
+  # --- deploy launcher wrapper ---
+  "${SCP[@]}" -q "${HERE}/bt_mode-launch.sh" \
+    "${SSH_USER}@${DEVICE}:${BT_MODE_LAUNCH_DST}" \
+    || log "warning: scp of launcher wrapper failed (non-fatal)"
+  "${SSH[@]}" "${SSH_USER}@${DEVICE}" "chmod 755 ${BT_MODE_LAUNCH_DST}" || true
+  log_ok "BT Mode splash deployed → ${BT_MODE_LAUNCH_DST}"
+fi
+
 # ---------- show status ----------
 log "Status on device:"
 "${SSH[@]}" "${SSH_USER}@${DEVICE}" '
@@ -323,5 +416,23 @@ echo "  5. Open joy.cpl (Windows) or gamepad-tester.com to verify input."
 echo
 echo "If pair fails or buttons don't register, read docs/TROUBLESHOOTING.md."
 echo "Logs: ssh ${SSH_USER}@${DEVICE} 'tail -f /var/log/bt_gamepad.log /var/log/bluetoothd.log'"
+echo
+c_blu "=== BT Mode splash app ==="
+echo "A fullscreen splash is deployed for stock-firmware users. Launch it with:"
+echo "  ssh ${SSH_USER}@${DEVICE} '${BT_MODE_LAUNCH_DST} &'    # smoke test over SSH
+echo
+echo "To add an entry to the stock Anbernic launcher, create a .sh file in"
+echo "the firmware's APP directory that calls ${BT_MODE_LAUNCH_DST}."
+echo "The exact APP directory varies by firmware revision — common locations:"
+echo "  /mnt/app/        (newer H700 firmware)"
+echo "  /media/app/      (alternate mount)"
+echo "  /mnt/SDCARD/APPS/ (SD-card based launchers)"
+echo "A minimal entry looks like:"
+echo '  #!/bin/sh'
+echo "  exec ${BT_MODE_LAUNCH_DST}"
+echo
+echo "While the splash is up, all buttons still forward to the paired host"
+echo "(evdev is not grabbed). Press Start+Select together to exit BT mode"
+echo "and return to the launcher."
 echo
 echo "To uninstall:  $0 --uninstall ${DEVICE} ${SSH_USER}"

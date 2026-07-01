@@ -1,0 +1,3 @@
+# Splash app deps — only needed for bt_mode.py, not the core BT stack.
+# Install via: python3 -m pip install -r app/requirements.txt
+pygame>=2.5

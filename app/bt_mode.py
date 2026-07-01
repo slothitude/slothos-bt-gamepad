@@ -36,6 +36,35 @@ FBIOPUT_VSCREENINFO = 0x4601
 FBIOBLANK = 0x4611
 VSCREENINFO_SIZE = 160
 
+# Hardcoded fb_var_screeninfo blob for the RG35xxH (hw_info=5) — sets
+# 640x480 @ 32bpp RGBA. Lifted verbatim from Clock/graphic.py because
+# the firmware's stock display mode (1280x1024 @ 16bpp RGB565) won't
+# accept RGBA writes. FBIOPUT_VSCREENINFO with this blob switches the
+# panel into the mode our RGBA mmap expects.
+FB_VINFO_RG35XXH = bytes.fromhex(
+    "80020000" "e0010000" "80020000" "c0030000"   # xres, yres, xv, yv
+    "00000000" "00000000" "20000000" "00000000"   # xoff, yoff, bpp=32, gray
+    "08000000" "08000000" "00000000"              # red: off=8 len=8 msb=0
+    "08000000" "08000000" "00000000"              # green
+    "08000000" "08000000" "00000000"              # blue
+    "08000000" "08000000" "00000000"              # alpha
+    "00000000"                                     # nonstd
+    "00000000"                                     # activate
+    "00000000"                                     # height
+    "00000000"                                     # width
+    "00000000"                                     # accel_flags
+    "c2a20000"                                     # pixclock
+    "1a000000"                                     # left_margin
+    "54000000"                                     # right_margin
+    "0b000000"                                     # upper_margin
+    "1b000000"                                     # lower_margin
+    "14000000"                                     # hsync_len
+    "04000000"                                     # vsync_len
+    "00000000" "00000000" "00000000" "00000000"   # sync, vmode, rotate, colorspace
+)
+assert len(FB_VINFO_RG35XXH) <= VSCREENINFO_SIZE
+FB_VINFO_RG35XXH = FB_VINFO_RG35XXH.ljust(VSCREENINFO_SIZE, b"\x00")
+
 FONT_PATH = "/usr/share/fonts/TTF/DejaVuSansMono.ttf"
 
 
@@ -57,6 +86,18 @@ class Framebuffer:
             self.saved_vinfo = bytes(buf)
         except OSError:
             self.saved_vinfo = None
+        # Switch to 640x480 @ 32bpp RGBA + unblank so RGBA mmap writes
+        # land correctly. Stock firmware boots at 1280x1024 @ 16bpp.
+        try:
+            ioctl(self.fd, FBIOPUT_VSCREENINFO,
+                  bytearray(FB_VINFO_RG35XXH))
+        except OSError as exc:
+            sys.stderr.write(
+                f"warning: FBIOPUT_VSCREENINFO failed: {exc}\n")
+        try:
+            ioctl(self.fd, FBIOBLANK, 0)
+        except OSError:
+            pass
         size = PANEL_W * PANEL_H * 4
         self.mm = mmap.mmap(self.fd, size)
 

@@ -450,7 +450,7 @@ echo "Next step — pair from your host OS (Windows/macOS/Android/Linux):"
 echo
 echo "  1. Open Bluetooth settings."
 echo "  2. Put the device in discoverable mode (it should already be):"
-echo "       ssh ${SSH_USER}@${DEVICE} 'hciconfig hci0 leadv on'"
+echo "       ssh ${SSH_USER}@${DEVICE} 'bluetoothctl discoverable on'"
 echo "  3. Look for a device named 'SlothOS Controller'."
 [[ -n "$DEVICE_BDADDR" ]] && echo "     Its address will be: ${DEVICE_BDADDR}"
 echo "  4. Pair. The agent on-device auto-confirms (DisplayYesNo)."

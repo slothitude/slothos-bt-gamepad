@@ -118,9 +118,11 @@ if [[ "$MODE" == "uninstall" ]]; then
     rm -rf '"${REMOTE_DIR}"'
     rm -rf '"${BT_MODE_DIR}"'
     rm -f '"${BT_MODE_LAUNCH_DST}"'
-    # Launcher entry + icon (stock firmware dmenu APPS dir, both SDs)
+    # Launcher entry + icon + code stub (stock firmware dmenu APPS dir, both SDs)
     rm -f /mnt/mmc/Roms/APPS/BT_Mode.sh /mnt/mmc/Roms/APPS/Imgs/BT_Mode.png
+    rm -rf /mnt/mmc/Roms/APPS/bt_mode
     rm -f /mnt/sdcard/Roms/APPS/BT_Mode.sh /mnt/sdcard/Roms/APPS/Imgs/BT_Mode.png
+    rm -rf /mnt/sdcard/Roms/APPS/bt_mode
   ' || log_die "Uninstall commands failed."
   log_ok "Uninstalled. Pair cache on host OS will clear on next pair attempt."
   exit 0
@@ -351,27 +353,44 @@ else
   log_ok "BT Mode splash deployed → ${BT_MODE_LAUNCH_DST}"
 
   # --- auto-create stock launcher entry + icon (turnkey) ---
-  # Stock Anbernic H700 firmware: top-level .sh files in
-  # /mnt/mmc/Roms/APPS/ show up in the dmenu "Apps" list. Icons live
-  # in Imgs/ as <EntryName>.png (240x180 RGBA). See app/bt_mode.py for
-  # the splash app; this entry just execs the wrapper we shipped above.
-  log "Auto-creating stock launcher entry (BT_Mode.sh + icon)…"
+  # Stock Anbernic H700 firmware (dmenu.bin): Apps entries require a
+  # top-level <Name>.sh file in /mnt/mmc/Roms/APPS/, a matching
+  # lowercase <name>/ subdir containing main.py, and a 240x180 RGBA
+  # icon at Imgs/<Name>.png. Verified on firmware 20251225.
+  # See /mnt/mmc/Roms/APPS/Clock.sh + clock/main.py for the stock
+  # pattern this mirrors.
+  log "Auto-creating stock launcher entry (BT_Mode.sh + subdir + icon)…"
   ICON_SRC="${HERE}/app/icon.png"
   if [[ ! -f "$ICON_SRC" ]]; then
     log "warning: app/icon.png missing — launcher entry will have no icon"
     ICON_SRC=""
   fi
 
-  # Primary SD (always present on stock firmware): /mnt/mmc
+  # /mnt/mmc is vfat (no symlink support) so we ship a tiny main.py
+  # stub that re-execs the canonical bt_mode.py under /usr/local.
   "${SSH[@]}" "${SSH_USER}@${DEVICE}" '
     set -e
-    mkdir -p /mnt/mmc/Roms/APPS /mnt/mmc/Roms/APPS/Imgs
+    mkdir -p /mnt/mmc/Roms/APPS/bt_mode /mnt/mmc/Roms/APPS/Imgs
     cat > /mnt/mmc/Roms/APPS/BT_Mode.sh <<"ENTRY"
 #!/bin/bash
-progdir=/usr/local/slothos/bt_mode
-exec python3 ${progdir}/bt_mode.py > ${progdir}/log.txt 2>&1
+
+progdir="$(cd $(dirname "$0") || exit; pwd)"/bt_mode
+
+program="python3 ${progdir}/main.py"
+log_file="${progdir}/log.txt"
+
+$program > "$log_file" 2>&1
 ENTRY
     chmod 755 /mnt/mmc/Roms/APPS/BT_Mode.sh
+    cat > /mnt/mmc/Roms/APPS/bt_mode/main.py <<"PYSTUB"
+#!/usr/bin/env python3
+"""Stock-launcher stub. /mnt/mmc is vfat (no symlinks), so this real
+file re-execs the canonical install under /usr/local/slothos/bt_mode/.
+dmenu scanner requires <name>/main.py to exist per app entry."""
+import runpy
+runpy.run_path("/usr/local/slothos/bt_mode/bt_mode.py", run_name="__main__")
+PYSTUB
+    chmod 755 /mnt/mmc/Roms/APPS/bt_mode/main.py
   ' || log "warning: failed to create /mnt/mmc launcher entry (non-fatal)"
 
   if [[ -n "$ICON_SRC" ]]; then
@@ -386,9 +405,10 @@ ENTRY
   if "${SSH[@]}" "${SSH_USER}@${DEVICE}" 'mountpoint -q /mnt/sdcard 2>/dev/null'; then
     log "Secondary SD detected — mirroring launcher entry to /mnt/sdcard"
     "${SSH[@]}" "${SSH_USER}@${DEVICE}" '
-      mkdir -p /mnt/sdcard/Roms/APPS /mnt/sdcard/Roms/APPS/Imgs
-      cp -f /mnt/mmc/Roms/APPS/BT_Mode.sh /mnt/sdcard/Roms/APPS/BT_Mode.sh 2>/dev/null || true
-      chmod 755 /mnt/sdcard/Roms/APPS/BT_Mode.sh 2>/dev/null || true
+      mkdir -p /mnt/sdcard/Roms/APPS/bt_mode /mnt/sdcard/Roms/APPS/Imgs
+      cp -f /mnt/mmc/Roms/APPS/BT_Mode.sh   /mnt/sdcard/Roms/APPS/BT_Mode.sh   2>/dev/null || true
+      cp -f /mnt/mmc/Roms/APPS/bt_mode/main.py /mnt/sdcard/Roms/APPS/bt_mode/main.py 2>/dev/null || true
+      chmod 755 /mnt/sdcard/Roms/APPS/BT_Mode.sh /mnt/sdcard/Roms/APPS/bt_mode/main.py 2>/dev/null || true
     ' || log "warning: /mnt/sdcard mirror skipped (non-fatal)"
     if [[ -n "$ICON_SRC" ]]; then
       "${SCP[@]}" -q "$ICON_SRC" \
@@ -397,7 +417,17 @@ ENTRY
     fi
   fi
 
-  log_ok "Launcher entry created — tap BT_Mode in Apps on the device"
+  # Nudge dmenu to rescan APPS so the new entry appears without a reboot.
+  # SIGUSR1 is the documented reload signal (this is what
+  # /etc/init.d/launcher.sh's restart case sends). NOTE: launcher.sh's
+  # "restart" only stops — do NOT call it from this script.
+  "${SSH[@]}" "${SSH_USER}@${DEVICE}" '
+    if pgrep dmenu.bin >/dev/null 2>&1; then
+      killall -s USR1 dmenu.bin 2>/dev/null || true
+    fi
+  ' || true
+
+  log_ok "Launcher entry created — tap BT_Mode under Apps on the device"
 fi
 
 # ---------- show status ----------
